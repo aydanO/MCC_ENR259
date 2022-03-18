@@ -1,3 +1,48 @@
+#include <Wire.h>
+#include <WireIMXRT.h>
+#include <WireKinetis.h>
+
+//#include <i2c_device.h>
+//#include <i2c_driver.h>
+//#include <i2c_driver_wire.h>
+//#include <i2c_register_slave.h>
+
+
+#include "Adafruit_TCS34725.h"
+
+// Pick analog outputs, for the UNO these three work well
+// use ~560  ohm resistor between Red & Blue, ~1K for green (its brighter)
+#define redpin 3
+#define greenpin 5
+#define bluepin 6
+// for a common anode LED, connect the common pin to +5V
+// for common cathode, connect the common to ground
+
+// set to false if using a common cathode LED
+#define commonAnode true
+
+// our RGB -> eye-recognized gamma color
+byte gammatable[256];
+
+
+Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_50MS, TCS34725_GAIN_4X);
+
+void setup() {
+  Serial.begin(9600);
+  //Serial.println("Color View Test!");
+
+  // Override the Wire to work on Teensy 3.x or 4.x
+  TwoWire *teensyWire = &Wire;
+  teensyWire->setSDA(25);
+  teensyWire->setSCL(24);
+  teensyWire->setClock(400000);
+  if (tcs.begin(TCS34725_ADDRESS, teensyWire)) {
+    Serial.println("Found sensor");
+  } else {
+    Serial.println("No TCS34725 found ... check your connections");
+    while (true);
+  }
+
 
   // use these three pins to drive an LED
 #if defined(ARDUINO_ARCH_ESP32)
