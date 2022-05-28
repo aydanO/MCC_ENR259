@@ -24,25 +24,22 @@
 #define NUM_SENSORS             8  // number of sensors used
 #define NUM_SAMPLES_PER_SENSOR  4  // average 4 analog samples per sensor reading
 #define EMITTER_PIN             QTR_NO_EMITTER_PIN  // emitter is controlled by digital pin 2
-#define redpin 3
-#define greenpin 5
-#define bluepin 6
-#define commonAnode true
-byte gammatable[256];
 
 ezButton button(32);  // create ezButton object that attach to pin 32;
 
-Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_50MS, TCS34725_GAIN_4X);
+Adafruit_TCS34725 pondSensor = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_50MS, TCS34725_GAIN_4X);
+Adafruit_TCS34725 fishSensor = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_50MS, TCS34725_GAIN_4X);
 
 const unsigned char MAX_SPEED = 50;
 
-
-QTRSensorsAnalog qtra((unsigned char[]) { A9, A8, A7, A6, A3, A2, A1, A0        //Pin names on Teensy
+QTRSensorsAnalog qtra((unsigned char[]) {
+  A9, A8, A7, A6, A3, A2, A1, A0        //Pin names on Teensy
 }, NUM_SENSORS, NUM_SAMPLES_PER_SENSOR, EMITTER_PIN);
 unsigned int sensorValues[NUM_SENSORS];
 
 // Motor Driver Properties
-TB67H420FTG driver(5, 6, 9, 7, 8, 10);   //Pin numbers on Teensy
+TB67H420FTG driver(5, 6, 9, 7, 8, 10);
+TB67H420FTG driver2(33, 34, 29, 35, 36, 30);
 
 // PID Properties
 const double KP = 0.02;
@@ -56,9 +53,9 @@ int lineCount = 0;
 //Setup function to calibrate line sensor array
 void setup() {
   driver.init();
+  driver2.init();
   Serial.begin(9600);
-  //  delay(5000);
-  //  Serial.println("Howdy");
+
   button.setDebounceTime(50); // set debounce time to 50 milliseconds
 
   calibrateLineSensor();
@@ -67,51 +64,26 @@ void setup() {
     button.loop(); // MUST call the loop() function first
 
   TwoWire *teensyWire = &Wire;
-  teensyWire->setSDA(25);
-  teensyWire->setSCL(24);
-  teensyWire->setClock(400000);
-  if (tcs.begin(TCS34725_ADDRESS, teensyWire)) {
-    Serial.println("Found sensor");
+  if (pondSensor.begin(TCS34725_ADDRESS, teensyWire)) {
+    //Serial.println("Found sensor");
   } else {
     Serial.println("No TCS34725 found ... check your connections");
-    while (true);
+    while (true); // halt!
   }
 
-
-  // use these three pins to drive an LED
-#if defined(ARDUINO_ARCH_ESP32)
-  ledcAttachPin(redpin, 1);
-  ledcSetup(1, 12000, 8);
-  ledcAttachPin(greenpin, 2);
-  ledcSetup(2, 12000, 8);
-  ledcAttachPin(bluepin, 3);
-  ledcSetup(3, 12000, 8);
-#else
-  pinMode(redpin, OUTPUT);
-  pinMode(greenpin, OUTPUT);
-  pinMode(bluepin, OUTPUT);
-#endif
-
-
-  for (int i = 0; i < 256; i++) {
-    float x = i;
-    x /= 255;
-    x = pow(x, 2.5);
-    x *= 255;
-
-    if (commonAnode) {
-      gammatable[i] = 255 - x;
-    } else {
-      gammatable[i] = x;
-    }
-    //Serial.println(gammatable[i]);
+  TwoWire *teensyWire1 = &Wire1;
+  if (fishSensor.begin(TCS34725_ADDRESS, teensyWire1)) {
+    //Serial.println("Found sensor");
+  } else {
+    Serial.println("No TCS34725 found ... check your connections");
+    while (true); // halt!
   }
 }
 
 //Main function
 void loop() {
-  
-  if (lineCount == 0){
+
+  if (lineCount == 0) {
     driver.setMotorAPower(50);
     driver.setMotorBPower(50);
     delay(250);
@@ -153,7 +125,7 @@ void loop() {
     delay(100);
   }
 
-  if (lineCount == 2){
+  if (lineCount == 2) {
     CircleFollow(8, 7);
     lineCount ++;
   }
@@ -198,10 +170,11 @@ void CircleFollow(int z, int i) {
 
 
     float red, green, blue;
+    float red1, green1, blue1;
 
-    tcs.getRGB(&red, &green, &blue);
+    pondSensor.getRGB(&red, &green, &blue);
+    fishSensor.getRGB(&red1, &green1, &blue);
     Serial.print(int(blue));
-
 
     if (int(blue) <= 100) {
       CircleTurn();
@@ -209,31 +182,38 @@ void CircleFollow(int z, int i) {
     else if (int(blue) > 100) {
       driver.setMotorAPower(25);
       driver.setMotorBPower(25);
-
+    }
+    else if (int(blue1) > 100) {
+      grabFish();
     }
   }
-
 }
 
-
-void calibrateLineSensor() {
-  delay(500);
-  pinMode(13, OUTPUT);
-  digitalWrite(13, HIGH);    // turn on Arduino's LED to indicate we are in calibration mode
-  for (int i = 0; i < 3000; i++)  // make the calibration take about 10 seconds
-  {
-    qtra.calibrate();       // reads all sensors 10 times at 2.5 ms per six sensors (i.e. ~25 ms per call)
+  void calibrateLineSensor() {
+    delay(500);
+    pinMode(13, OUTPUT);
+    digitalWrite(13, HIGH);    // turn on Arduino's LED to indicate we are in calibration mode
+    for (int i = 0; i < 3000; i++)  // make the calibration take about 10 seconds
+    {
+      qtra.calibrate();       // reads all sensors 10 times at 2.5 ms per six sensors (i.e. ~25 ms per call)
+    }
+    digitalWrite(13, LOW);     // turn off Arduino's LED to indicate we are through with calibration
   }
-  digitalWrite(13, LOW);     // turn off Arduino's LED to indicate we are through with calibration
-}
 
 
-void CircleTurn() {
-  driver.setMotorAPower(-6);
-  driver.setMotorBPower(25);
-}
+  void CircleTurn() {
+    driver.setMotorAPower(-6);
+    driver.setMotorBPower(25);
+  }
 
-void RightTurn() {
-  driver.setMotorAPower(30);
-  driver.setMotorBPower(10);
-}
+  void grabFish() {
+    driver2.setMotorBPower(-70);
+    delay(275);
+    driver2.brakeAll();
+    driver2.setMotorAPower(70);
+    delay(200);
+    driver2.brakeAll();
+    driver.setAllCoastPower(MAX_SPEED);
+    delay(200);
+    driver.brakeAll();
+  }
