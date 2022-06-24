@@ -18,19 +18,11 @@
 #include <WireKinetis.h>
 #include "TB67H420FTG.h"
 #include "Adafruit_TCS34725.h"
-#include <ezButton.h>
 
 // Line Sensor Properties
 #define NUM_SENSORS             8  // number of sensors used
 #define NUM_SAMPLES_PER_SENSOR  4  // average 4 analog samples per sensor reading
 #define EMITTER_PIN             QTR_NO_EMITTER_PIN  // emitter is controlled by digital pin 2
-#define redpin 3
-#define greenpin 5
-#define bluepin 6
-#define commonAnode true
-byte gammatable[256];
-
-ezButton button(32);  // create ezButton object that attach to pin 32;
 
 Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_50MS, TCS34725_GAIN_4X);
 
@@ -51,21 +43,18 @@ const double KD = 0.0;
 double lastError = 0;
 const int GOAL = 500;
 
-//Global Variable for counting lines
-int lineCount = 0;
+// Global
+bool shouldJumpAhead = 1;
 
 //Setup function to calibrate line sensor array
 void setup() {
   driver.init();
   Serial.begin(9600);
-  //  delay(5000);
-  //  Serial.println("Howdy");
-  //button.setDebounceTime(50); // set debounce time to 50 milliseconds
+  while (1) {
+    lakePID();
+  }
 
   calibrateLineSensor();
-
-  //  while (!button.isPressed())
-  //    button.loop(); // MUST call the loop() function first
 
   TwoWire *teensyWire = &Wire;
   teensyWire->setSDA(25);
@@ -77,100 +66,20 @@ void setup() {
     Serial.println("No TCS34725 found ... check your connections");
     while (true);
   }
-
-
-  // use these three pins to drive an LED
-#if defined(ARDUINO_ARCH_ESP32)
-  ledcAttachPin(redpin, 1);
-  ledcSetup(1, 12000, 8);
-  ledcAttachPin(greenpin, 2);
-  ledcSetup(2, 12000, 8);
-  ledcAttachPin(bluepin, 3);
-  ledcSetup(3, 12000, 8);
-#else
-  pinMode(redpin, OUTPUT);
-  pinMode(greenpin, OUTPUT);
-  pinMode(bluepin, OUTPUT);
-#endif
-
-
-  for (int i = 0; i < 256; i++) {
-    float x = i;
-    x /= 255;
-    x = pow(x, 2.5);
-    x *= 255;
-
-    if (commonAnode) {
-      gammatable[i] = 255 - x;
-    } else {
-      gammatable[i] = x;
-    }
-    //Serial.println(gammatable[i]);
-  }
 }
+
 
 //Main function
 void loop() {
 
-  if (lineCount == 0) {
-    driver.setMotorAPower(50);
-    driver.setMotorBPower(50);
-    delay(700);
-    lineCount ++;
-  }
+  PID(500, 1);
+  CircleFollow(7, 7);
 
-  // Get line position
-  unsigned int position = qtra.readLine(sensorValues);
+  PID(500, 5);
+  CircleFollow(21, 7);
 
-  // Compute error from line
-  int error = GOAL - position;
-
-  // Compute motor adjustment
-  int adjustment = KP * error + KD * (error - lastError);
-
-  // Store error for next increment
-  lastError = error;
-
-
-  // Adjust motors
-  driver.setMotorAPower
-  (constrain(MAX_SPEED - adjustment, 0, MAX_SPEED));
-  driver.setMotorBPower(constrain(MAX_SPEED + adjustment, 0, MAX_SPEED));
-
-  //Initialize varaible for counting of lines(each time, not total lines like lineCount)
-  int count = 0;
-
-  for (unsigned char i = 0; i < NUM_SENSORS; i++)
-  {
-    if (sensorValues[i] > 250) {
-      count++;
-    }
-  }
-
-  //If statement for robot to go straight until it passes 4 grid lines
-  if (count >= 4) {
-    driver.setAllCoastPower(MAX_SPEED);
-    lineCount++;
-    delay(100);
-  }
-
-  if (lineCount == 2) {
-    CircleFollow(10, );
-    lineCount ++;
-  }
-
-  if (lineCount == 9) {
-    CircleFollow(18, 7);
-    lineCount++;
-
-  }
-
-  else if (lineCount == 12) {
-    CircleFollow(10, 7);
-    lineCount++;
-
-  }
-
+  PID(6500, 2);
+  CircleFollow(10, 7);
 }
 
 
@@ -184,7 +93,7 @@ void CircleFollow(int z, int i) {
     _sensorVal = sensorValues[i];
 
 
-    if (_sensorVal > 500) {
+    if (_sensorVal > 700) {
       if (Tripped == 0) {
         _lineCount ++;
         Tripped = 1;
@@ -213,7 +122,6 @@ void CircleFollow(int z, int i) {
 
     }
   }
-
 }
 
 
@@ -237,4 +145,69 @@ void CircleTurn() {
 void RightTurn() {
   driver.setMotorAPower(30);
   driver.setMotorBPower(10);
+}
+
+void PID(int GOAL, int LineCountGoal) {
+  int lineCount = 0;
+  while (lineCount <= LineCountGoal) {
+    // Get line position
+    unsigned int position = qtra.readLine(sensorValues);
+
+    // Compute error from line
+    int error = GOAL - position;
+
+    // Compute motor adjustment
+    int adjustment = KP * error + KD * (error - lastError);
+
+    // Store error for next increment
+    lastError = error;
+
+
+    // Adjust motors
+    driver.setMotorAPower
+    (constrain(MAX_SPEED - adjustment, 0, MAX_SPEED));
+    driver.setMotorBPower(constrain(MAX_SPEED + adjustment, 0, MAX_SPEED));
+
+    //Initialize varaible for counting of lines(each time, not total lines like lineCount)
+    int count = 0;
+
+    for (unsigned char i = 0; i < NUM_SENSORS; i++)
+    {
+      if (sensorValues[i] > 250) {
+        count++;
+      }
+    }
+
+    //If statement for robot to go straight until it passes 4 grid lines
+    if (count >= 4) {
+      driver.setAllCoastPower(MAX_SPEED);
+      lineCount++;
+      delay(100);
+    }
+  }
+}
+
+void lakePID() {
+  const char _MAX_SPEED = 20;
+  const char _GOAL_SPEED = 20;
+  const double _KP = 0.3;
+  const double _KD = 1;
+  const double _LEFT_COEFFICIENT = 1.5;      // Left motor is farther from the sensor, so it needs more oomph
+  const char _GOAL = 100;
+  float red, green, blue;
+  static double _lastError = 0;
+
+  // Take a color sensor reading (lower value means less color)
+  tcs.getRGB(&red, &green, &blue);
+
+  // Compute error
+  double _error = blue - _GOAL;
+
+  // Compute adjustment
+  int _adjustment = _KP * _error + _KD * (_error - _lastError);
+  _lastError = _error;
+
+  // Adjust motors (B should go higher when blue is lower)
+  driver.setMotorBPower(constrain(_GOAL_SPEED + _adjustment, 0, _GOAL_SPEED));
+  driver.setMotorAPower(constrain(_GOAL_SPEED - _adjustment * _LEFT_COEFFICIENT, 0, _MAX_SPEED));
 }
