@@ -18,13 +18,20 @@
 #include <WireKinetis.h>
 #include "TB67H420FTG.h"
 #include "Adafruit_TCS34725.h"
+#include <Servo.h>
 
 // Line Sensor Properties
 #define NUM_SENSORS             8  // number of sensors used
 #define NUM_SAMPLES_PER_SENSOR  4  // average 4 analog samples per sensor reading
 #define EMITTER_PIN             QTR_NO_EMITTER_PIN  // emitter is controlled by digital pin 2
 
-Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_50MS, TCS34725_GAIN_4X);
+// Define Servos
+Servo DumpServo;
+Servo ArmServo;
+Servo HandServo;
+
+Adafruit_TCS34725 fishSensor = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_50MS, TCS34725_GAIN_4X);
+Adafruit_TCS34725 pondSensor = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_50MS, TCS34725_GAIN_4X);
 
 const unsigned char MAX_SPEED = 50;
 
@@ -50,80 +57,43 @@ bool shouldJumpAhead = 1;
 void setup() {
   driver.init();
   Serial.begin(9600);
-  while (1) {
-    lakePID();
-  }
-
+  
+  ServoHome();
   calibrateLineSensor();
 
   TwoWire *teensyWire = &Wire;
-  teensyWire->setSDA(25);
-  teensyWire->setSCL(24);
-  teensyWire->setClock(400000);
-  if (tcs.begin(TCS34725_ADDRESS, teensyWire)) {
-    Serial.println("Found sensor");
+  if (fishSensor.begin(TCS34725_ADDRESS, teensyWire)) {
+    //Serial.println("Found sensor");
   } else {
     Serial.println("No TCS34725 found ... check your connections");
-    while (true);
+    while (true); // halt!
   }
-}
 
+  TwoWire *teensyWire1 = &Wire1;
+  if (pondSensor.begin(TCS34725_ADDRESS, teensyWire1)) {
+    //Serial.println("Found sensor");
+  } else {
+    Serial.println("No TCS34725 found ... check your connections");
+    while (true); // halt!
+  }
+  //Setup Servos
+  DumpServo.attach(3, 490, 2690);
+  ArmServo.attach(2, 900, 2100);
+  HandServo.attach(4, 900, 2250);
+}
 
 //Main function
 void loop() {
 
   PID(500, 1);
-  CircleFollow(7, 7);
+  lakePID(7, 7);
 
   PID(500, 5);
-  CircleFollow(21, 7);
+  lakePID(21, 7);
 
   PID(6500, 2);
-  CircleFollow(10, 7);
+  lakePID(10, 7);
 }
-
-
-void CircleFollow(int z, int i) {
-  int _lineCount = 0;
-  int _sensorVal;
-  bool Tripped = 0;
-
-  while (_lineCount <= z) {
-    qtra.readLine(sensorValues);
-    _sensorVal = sensorValues[i];
-
-
-    if (_sensorVal > 700) {
-      if (Tripped == 0) {
-        _lineCount ++;
-        Tripped = 1;
-        digitalWrite(LED_BUILTIN, HIGH);
-      }
-    }
-
-    else {
-      digitalWrite(LED_BUILTIN, LOW);
-      Tripped = 0;
-    }
-
-
-    float red, green, blue;
-
-    tcs.getRGB(&red, &green, &blue);
-    Serial.print(int(blue));
-
-
-    if (int(blue) <= 100) {
-      CircleTurn();
-    }
-    else if (int(blue) > 100) {
-      driver.setMotorAPower(25);
-      driver.setMotorBPower(25);
-
-    }
-  }
-}
-
 
 void calibrateLineSensor() {
   delay(500);
@@ -134,17 +104,6 @@ void calibrateLineSensor() {
     qtra.calibrate();       // reads all sensors 10 times at 2.5 ms per six sensors (i.e. ~25 ms per call)
   }
   digitalWrite(13, LOW);     // turn off Arduino's LED to indicate we are through with calibration
-}
-
-
-void CircleTurn() {
-  driver.setMotorAPower(25);
-  driver.setMotorBPower(-6);
-}
-
-void RightTurn() {
-  driver.setMotorAPower(30);
-  driver.setMotorBPower(10);
 }
 
 void PID(int GOAL, int LineCountGoal) {
@@ -187,7 +146,7 @@ void PID(int GOAL, int LineCountGoal) {
   }
 }
 
-void lakePID() {
+void lakePID(int z, int i) {
   const char _MAX_SPEED = 20;
   const char _GOAL_SPEED = 20;
   const double _KP = 0.3;
@@ -195,19 +154,66 @@ void lakePID() {
   const double _LEFT_COEFFICIENT = 1.5;      // Left motor is farther from the sensor, so it needs more oomph
   const char _GOAL = 100;
   float red, green, blue;
+  float red1, green1, blue1;
   static double _lastError = 0;
+  int _lineCount = 0;
+  int _sensorVal;
+  bool Tripped = 0;
 
-  // Take a color sensor reading (lower value means less color)
-  tcs.getRGB(&red, &green, &blue);
+  while (_lineCount <= z) {
+    qtra.readLine(sensorValues);
+    _sensorVal = sensorValues[i];
 
-  // Compute error
-  double _error = blue - _GOAL;
 
-  // Compute adjustment
-  int _adjustment = _KP * _error + _KD * (_error - _lastError);
-  _lastError = _error;
+    if (_sensorVal > 250) {
+      if (Tripped == 0) {
+        _lineCount ++;
+        Tripped = 1;
+        digitalWrite(LED_BUILTIN, HIGH);
+      }
+    }
 
-  // Adjust motors (B should go higher when blue is lower)
-  driver.setMotorBPower(constrain(_GOAL_SPEED + _adjustment, 0, _GOAL_SPEED));
-  driver.setMotorAPower(constrain(_GOAL_SPEED - _adjustment * _LEFT_COEFFICIENT, 0, _MAX_SPEED));
+    else {
+      digitalWrite(LED_BUILTIN, LOW);
+      Tripped = 0;
+    }
+
+    // Take a color sensor reading (lower value means less color)
+    pondSensor.getRGB(&red, &green, &blue);
+    fishSensor.getRGB(&red1, &green1, &blue1);
+
+    // Compute error
+    double _error = blue - _GOAL;
+
+    // Compute adjustment
+    int _adjustment = _KP * _error + _KD * (_error - _lastError);
+    _lastError = _error;
+
+    // Adjust motors (B should go higher when blue is lower)
+    driver.setMotorBPower(constrain(_GOAL_SPEED + _adjustment, 0, _GOAL_SPEED));
+    driver.setMotorAPower(constrain(_GOAL_SPEED - _adjustment * _LEFT_COEFFICIENT, 0, _MAX_SPEED));
+
+    if (int (blue1) < 68) {
+      grabFish();
+    }
+  }
+}
+
+void grabFish() {
+//  ArmServo.write(180);
+//  delay(100);
+//  HandServo.write(140);
+//  delay(100);
+//  ArmServo.write(0);
+//  delay(100);
+//  HandServo.write(0);
+}
+
+void ServoHome() {
+  DumpServo.write(180);
+  delay(100);
+  HandServo.write(0);
+  delay(100);
+  ArmServo.write(0);
+  delay(100);
 }
