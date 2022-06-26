@@ -63,10 +63,7 @@ void setup() {
 
 //Main function
 void loop() {
-
-  while (1) {
-    lakePID();
-  }
+  lakePID();
 }
 
 
@@ -96,28 +93,21 @@ void lakePID() {
   driver.setMotorBPower(constrain(_GOAL_SPEED + _adjustment, 0, _GOAL_SPEED));
   driver.setMotorAPower(constrain(_GOAL_SPEED - _adjustment * _LEFT_COEFFICIENT, 0, _MAX_SPEED));
 
-  Serial.print(int (red1));
-  Serial.print("-");
-  Serial.print(int (green1));
-  Serial.print("-");
-  Serial.print(int (blue1));
-  Serial.println();git a
-
-
-//  if(int (blue1) <= 75 && int (green1) >= 73){
-//    driver.brakeAll();
-//    //grabFish();
-//  }
+  if(int (blue1) <= 55){
+    driver.brakeAll();
+    grabFish();
+  }
 }
 
 void grabFish() {
+  HandServo.write(90);
+  delay(1000);
+  ArmServo.write(20);
+  delay(3000);
   HandServo.write(0);
   delay(1000);
   ArmServo.write(180);
-  delay(1000);
-  HandServo.write(120);
-  delay(1000);
-  ArmServo.write(0);
+  delay(3000);
 }
 
 void ServoHome() {
@@ -125,6 +115,6 @@ void ServoHome() {
   delay(100);
   HandServo.write(0);
   delay(100);
-  ArmServo.write(0);
-  delay(100);
+  ArmServo.write(180);
+  delay(3000);
 }
