@@ -98,21 +98,21 @@ void loop() {
   lakePID(10, 7);
 
   //big pond
-  PID(500, 5);
+  PID(500, 4, 0);
   lakePID(21, 7);
 
   //Small Pond
-  PID(6500, 2);
+  PID(6500, 2, 0);
   lakePID(10, 7);
 
 }
 
 
-void PID(int Goal, int LineCountGoal) {
+void PID(int Goal, int LineCountGoal, int lineCount) {
   const double KP = 0.02;
   const double KD = 0.0;
   double lastError = 0;
-  int lineCount = 0;
+  //int lineCount = 0;
 
   while (lineCount <= LineCountGoal) {
     // Get line position
@@ -133,7 +133,7 @@ void PID(int Goal, int LineCountGoal) {
     driver.setMotorAPower(constrain(MAX_SPEED + adjustment, 0, MAX_SPEED));
 
     //Call to intersection function
-    if (intersection(Goal, LineCountGoal)) {
+    if (intersection(Goal, LineCountGoal, lineCount)) {
       lineCount++;
     }
   }
@@ -153,7 +153,7 @@ void lakePID(int pondLines, int i) {
   int _sensorVal;
   int x = 0;
   bool Tripped = 0;
-  double _error = 0;
+  static double _error = 0;
 
   while (x <= pondLines) {
     qtra.readLine(sensorValues);
@@ -180,12 +180,9 @@ void lakePID(int pondLines, int i) {
     fishSensor.getRGB(&red1, &green1, &blue1);
 
     // Compute error
-    if(int (red) <= 55){
-      double _error = blue - _GOAL;
-    }
-    else{
-      _error = _lastError;
-    }
+    //if(int (blue) >= 100){
+       _error = blue - _GOAL;
+//    }
 
     // Compute adjustment
     int _adjustment = _KP * _error + _KD * (_error - _lastError);
@@ -247,10 +244,10 @@ void skipFish() {
   delay(2000);
 }
 
-bool intersection(int Goal, int numInt) {
+bool intersection(int Goal, int numInt, int lineCount) {
   if (sensorValues[0] >= BlackThreshold && sensorValues[7] >= BlackThreshold) {
     while (sensorValues[0] >= BlackThreshold && sensorValues[7] >= BlackThreshold) {
-      PID(Goal, numInt);
+      PID(Goal, numInt, lineCount);
     }
     return 1;
   }
