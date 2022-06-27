@@ -14,7 +14,7 @@
 //Include libraries for motor driver and sensor array
 #include <QTRSensors.h>
 #include <Wire.h>
-#include <WireIMXRT.h>
+#include <WireIMXRT.h>  
 #include <WireKinetis.h>
 #include "TB67H420FTG.h"
 #include "Adafruit_TCS34725.h"
@@ -98,21 +98,23 @@ void loop() {
   lakePID(10, 7);
 
   //big pond
-  PID(500, 4, 0);
+  PID(1000, 4);
   lakePID(21, 7);
 
   //Small Pond
-  PID(6500, 2, 0);
+  PID(6500, 2);
   lakePID(10, 7);
 
 }
 
 
-void PID(int Goal, int LineCountGoal, int lineCount) {
+void PID(int Goal, int LineCountGoal) {
   const double KP = 0.02;
   const double KD = 0.0;
   double lastError = 0;
-  //int lineCount = 0;
+  bool Tripped = 0;
+  int lineCount = 0;
+  int count = 0;
 
   while (lineCount <= LineCountGoal) {
     // Get line position
@@ -133,8 +135,33 @@ void PID(int Goal, int LineCountGoal, int lineCount) {
     driver.setMotorAPower(constrain(MAX_SPEED + adjustment, 0, MAX_SPEED));
 
     //Call to intersection function
-    if (intersection(Goal, LineCountGoal, lineCount)) {
-      lineCount++;
+    //    if (intersection(Goal, LineCountGoal, &lineCount)) {
+    //      lineCount++;
+    //    }
+    //    if (sensorValues[0] >= BlackThreshold && sensorValues[7] >= BlackThreshold) {
+    //      while (sensorValues[0] >= BlackThreshold && sensorValues[7] >= BlackThreshold) {
+    //        PID(Goal, LineCountGoal);
+    //      }
+    //      lineCount ++;
+    //    }
+    for (unsigned char i = 0; i < 8; i ++) {
+      qtra.readLine(sensorValues);
+      int _sensorVal = sensorValues[i];
+      if (_sensorVal > 250) {
+        count ++;
+      }
+    }
+    if (count >= 4) {
+      if (Tripped == 0) {
+        lineCount ++;
+        Tripped = 1;
+        digitalWrite(LED_BUILTIN, HIGH);
+        Serial.println(lineCount);
+      }
+    }
+    else {
+      digitalWrite(LED_BUILTIN, LOW);
+      Tripped = 0;
     }
   }
 }
@@ -181,8 +208,8 @@ void lakePID(int pondLines, int i) {
 
     // Compute error
     //if(int (blue) >= 100){
-       _error = blue - _GOAL;
-//    }
+    _error = blue - _GOAL;
+    //    }
 
     // Compute adjustment
     int _adjustment = _KP * _error + _KD * (_error - _lastError);
@@ -244,12 +271,12 @@ void skipFish() {
   delay(2000);
 }
 
-bool intersection(int Goal, int numInt, int lineCount) {
-  if (sensorValues[0] >= BlackThreshold && sensorValues[7] >= BlackThreshold) {
-    while (sensorValues[0] >= BlackThreshold && sensorValues[7] >= BlackThreshold) {
-      PID(Goal, numInt, lineCount);
-    }
-    return 1;
-  }
-  return 0;
-}
+//bool intersection(int Goal, int numInt, int *lineCount) {
+//  if (sensorValues[0] >= BlackThreshold && sensorValues[7] >= BlackThreshold) {
+//    while (sensorValues[0] >= BlackThreshold && sensorValues[7] >= BlackThreshold) {
+//      PID(Goal, numInt, lineCount);
+//    }
+//    return 1;
+//  }
+//  return 0;
+//}
