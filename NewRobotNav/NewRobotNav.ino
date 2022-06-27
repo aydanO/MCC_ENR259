@@ -45,6 +45,8 @@ TB67H420FTG driver(5, 6, 9, 7, 8, 10);   //Pin numbers on Teensy
 const double KP = 0.02;
 const double KD = 0.0;
 double lastError = 0;
+int lineCount = 0;
+int BlackThreshold = 250;
 
 
 Servo DumpServo;
@@ -62,8 +64,9 @@ void setup() {
 
   button.setDebounceTime(50); // set debounce time to 50 milliseconds
 
-  calibrateLineSensor();
   ServoHome();
+  calibrateLineSensor();
+
 
   while (!button.isPressed())
     button.loop();
@@ -89,8 +92,10 @@ void setup() {
 void loop() {
 
   //medium pond
-  PID(500, 1);
-  lakePID(7, 7);
+  driver.setMotorAPower(50);
+  driver.setMotorBPower(50);
+  delay(1000);
+  lakePID(10, 7);
 
   //big pond
   PID(500, 5);
@@ -103,7 +108,7 @@ void loop() {
 }
 
 
-void PID(int GOAL, int LineCountGoal) {
+void PID(int Goal, int LineCountGoal) {
   const double KP = 0.02;
   const double KD = 0.0;
   double lastError = 0;
@@ -114,7 +119,7 @@ void PID(int GOAL, int LineCountGoal) {
     unsigned int position = qtra.readLine(sensorValues);
 
     // Compute error from line
-    int error = GOAL - position;
+    int error = Goal - position;
 
     // Compute motor adjustment
     int adjustment = KP * error + KD * (error - lastError);
@@ -124,25 +129,12 @@ void PID(int GOAL, int LineCountGoal) {
 
 
     // Adjust motors
-    driver.setMotorAPower
-    (constrain(MAX_SPEED - adjustment, 0, MAX_SPEED));
-    driver.setMotorBPower(constrain(MAX_SPEED + adjustment, 0, MAX_SPEED));
+    driver.setMotorBPower(constrain(MAX_SPEED - adjustment, 0, MAX_SPEED));
+    driver.setMotorAPower(constrain(MAX_SPEED + adjustment, 0, MAX_SPEED));
 
-    //Initialize varaible for counting of lines(each time, not total lines like lineCount)
-    int count = 0;
-
-    for (unsigned char i = 0; i < NUM_SENSORS; i++)
-    {
-      if (sensorValues[i] > 250) {
-        count++;
-      }
-    }
-
-    //If statement for robot to go straight until it passes 4 grid lines
-    if (count >= 4) {
-      driver.setAllCoastPower(MAX_SPEED);
+    //Call to intersection function
+    if (intersection(Goal, LineCountGoal)) {
       lineCount++;
-      delay(100);
     }
   }
 }
@@ -151,20 +143,24 @@ void PID(int GOAL, int LineCountGoal) {
 void lakePID(int pondLines, int i) {
   const char _MAX_SPEED = 30;
   const char _GOAL_SPEED = 20;
-  const double _KP = 0.35;
+  const double _KP = 0.3;
   const double _KD = 1;
   const double _LEFT_COEFFICIENT = 1.5;      // Left motor is farther from the sensor, so it needs more oomph
-  const char _GOAL = 100;
+  const char _GOAL = 96;
   float red, green, blue;
   float red1, green1, blue1;
   static double _lastError = 0;
   int _sensorVal;
   int x = 0;
   bool Tripped = 0;
+  double _error = 0;
 
   while (x <= pondLines) {
     qtra.readLine(sensorValues);
     _sensorVal = sensorValues[i];
+    //
+    //    Serial.println(_sensorVal);
+    //    delay(100);
 
     if (_sensorVal > 250) {
       if (Tripped == 0) {
@@ -184,7 +180,12 @@ void lakePID(int pondLines, int i) {
     fishSensor.getRGB(&red1, &green1, &blue1);
 
     // Compute error
-    double _error = blue - _GOAL;
+    if(int (red) <= 55){
+      double _error = blue - _GOAL;
+    }
+    else{
+      _error = _lastError;
+    }
 
     // Compute adjustment
     int _adjustment = _KP * _error + _KD * (_error - _lastError);
@@ -195,11 +196,11 @@ void lakePID(int pondLines, int i) {
     driver.setMotorAPower(constrain(_GOAL_SPEED - _adjustment * _LEFT_COEFFICIENT, 0, _MAX_SPEED));
 
     if (int (blue1) <= 63) {
-      driver.brakeAll();
-      grabFish();
+      //driver.brakeAll();
+      //grabFish();
     }
     else if (int (red1) >= 93) {
-      skipFish();
+      //skipFish();
     }
   }
 }
@@ -230,11 +231,12 @@ void grabFish() {
 }
 
 void ServoHome() {
-  DumpServo.write(180);
+  DumpServo.write(177);
   delay(100);
-  HandServo.write(0);
+  HandServo.write(107);
   delay(100);
-  ArmServo.write(150);
+  //ArmServo.write(145);
+  ArmServo.write(50);
   delay(3000);
 }
 
@@ -243,4 +245,14 @@ void skipFish() {
   delay(2000);
   ArmServo.write(150);
   delay(2000);
+}
+
+bool intersection(int Goal, int numInt) {
+  if (sensorValues[0] >= BlackThreshold && sensorValues[7] >= BlackThreshold) {
+    while (sensorValues[0] >= BlackThreshold && sensorValues[7] >= BlackThreshold) {
+      PID(Goal, numInt);
+    }
+    return 1;
+  }
+  return 0;
 }
