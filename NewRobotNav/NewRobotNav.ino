@@ -112,7 +112,7 @@ void PID(int Goal, int LineCountGoal) {
   const double KP = 0.02;
   const double KD = 0.0;
   double lastError = 0;
-  bool Tripped = 0;
+  static bool Tripped = 0;
   int lineCount = 0;
   int count = 0;
 
