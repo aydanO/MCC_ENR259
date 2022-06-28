@@ -21,8 +21,21 @@
 #include <Servo.h>
 #include <ezButton.h>
 
-#define IS_YELLOW_FISH int(blue) <= 63
-#define IS_RED_FISH int(red) >= 93
+#define DEBUG_LAKE_PID 0
+
+//          R   G  B
+// Y Fish   110 79 57
+// R Fish   119 67 63
+// No Fish  108 73 66
+#define IS_YELLOW_FISH int(blue) <= 60 && int(green) >= 75
+#define IS_RED_FISH int(red) >= 115
+
+#define DUMP_DOWN 177
+#define HAND_OPEN 0
+#define ARM_MIDWAY 90
+#define HAND_CLOSED 120
+#define ARM_UP 0
+#define ARM_DOWN 145
 
 /*
   ENG 259 Robot
@@ -96,6 +109,8 @@ void setup() {
         while (true); // halt!
     }
 
+//    colorSensorTest();
+
     /* ###### Run through sequence of steps ######## */
 
     // Find first line
@@ -109,6 +124,7 @@ void setup() {
         // Check for black
         if (isSensorSeeingBlack(7)) {
             lineCount++;
+            waitUntilSensorNotSeeingBlack(7);
         }
 
         // Call PID for lake
@@ -117,6 +133,30 @@ void setup() {
         // Check for fish
         checkForFish();
     }
+
+    // (UNTESTED)
+    // After first lake, travel to next lake (sample numbers, fill in as needed)
+    pidFollowForNIntersections(1000, 4);
+
+    // Follow second lake (UNTESTED)
+    lineCount = 0;
+    while (lineCount <= 21) {
+        // Check for black
+        if (isSensorSeeingBlack(7)) {
+            lineCount++;
+            waitUntilSensorNotSeeingBlack(7);
+        }
+
+        // Call PID for lake
+        lakePID();
+
+        // Check for fish
+        checkForFish();
+    }
+
+
+    // Stop doin' stuff
+    driver.brakeAll();
 }
 
 //Main function
@@ -143,10 +183,10 @@ void checkForFish() {
     fishSensor.getRGB(&red, &green, &blue);
 
     if (IS_YELLOW_FISH) {
-        //driver.brakeAll();
-        //grabFish();
+        driver.brakeAll();
+        grabFish();
     } else if (IS_RED_FISH) {
-        //skipFish();
+        skipFish();
     }
 }
 
@@ -181,15 +221,11 @@ void lakePID() {
     const char GOAL_SPEED = 20;
     const double KP = 0.3;
     const double KD = 1;
-    const double LEFT_COEFFICIENT = 1.5;      // Left motor is farther from the sensor, so it needs more oomph
+    const double RIGHT_COEFFICIENT = 1.5;      // Left motor is farther from the sensor, so it needs more oomph
     const char GOAL = 96;
-    float red, green, blue;
-    float red1, green1, blue1;
-    static double _lastError = 0;
-    int _sensorVal;
-    int x = 0;
-    bool Tripped = false;
-    static double _error = 0;
+    static float red, green, blue;
+    static double lastError = 0;
+    static double error = 0;
 
 //    while (x <= pondLines) {
 //        qtra.readLine(sensorValues);
@@ -210,19 +246,32 @@ void lakePID() {
 //        }
 //
 //         Take a color sensor reading (lower value means less color)
-//        pondSensor.getRGB(&red, &green, &blue);
+    static unsigned long lastRead = millis() - 50;
+    if (millis() - lastRead > 50) {
+        pondSensor.getRGB(&red, &green, &blue);
+        lastRead = millis();
+    }
 //        fishSensor.getRGB(&red1, &green1, &blue1);
 
     // Compute error
-    _error = blue - GOAL;
+    error = blue - GOAL;
 
     // Compute adjustment
-    int _adjustment = KP * _error + KD * (_error - _lastError);
-    _lastError = _error;
+    int adjustment = KP * error + KD * (error - lastError);
+    lastError = error;
 
-    // Adjust motors (B should go higher when blue is lower)
-    driver.setMotorBPower(constrain(GOAL_SPEED + _adjustment, 0, GOAL_SPEED));
-    driver.setMotorAPower(constrain(GOAL_SPEED - _adjustment * LEFT_COEFFICIENT, 0, MAX_SPEED));
+    // Adjust motors (B is the Right motor)
+    driver.setMotorBPower(constrain(GOAL_SPEED + adjustment, 0, MAX_SPEED));
+    driver.setMotorAPower(constrain(GOAL_SPEED - adjustment * RIGHT_COEFFICIENT, 0, MAX_SPEED));
+
+#if DEBUG_LAKE_PID
+    Serial.print("sen:");
+    Serial.print(blue);
+    Serial.print(" err:");
+    Serial.print(error);
+    Serial.print(" adj:");
+    Serial.println(adjustment);
+#endif
 }
 
 void calibrateLineSensor() {
@@ -237,35 +286,41 @@ void calibrateLineSensor() {
 }
 
 void grabFish() {
-    driver.setMotorBPower(10);
+    
+    driver.setMotorBPower(15);
     driver.setMotorAPower(30);
-    delay(800);
+    delay(1000);
     driver.brakeAll();
-    HandServo.write(120);
+    HandServo.write(HAND_CLOSED);
+    delay(500);
+    ArmServo.write(ARM_UP);
+    delay(2000);
+    HandServo.write(HAND_OPEN);
+    delay(500);
+    ArmServo.write(ARM_DOWN);
     delay(1000);
-    ArmServo.write(0);
-    delay(3000);
-    HandServo.write(0);
-    delay(1000);
-    ArmServo.write(150);
-    delay(3000);
 }
 
 void ServoHome() {
-    DumpServo.write(177);
+    
+    DumpServo.write(DUMP_DOWN);
     delay(100);
-    HandServo.write(107);
+    HandServo.write(HAND_OPEN);
     delay(100);
-    //ArmServo.write(145);
-    ArmServo.write(50);
-    delay(3000);
+    ArmServo.write(ARM_DOWN);
+//    ArmServo.write(ARM_MIDWAY);
+    delay(1000);
 }
 
 void skipFish() {
-    ArmServo.write(90);
-    delay(2000);
-    ArmServo.write(150);
-    delay(2000);
+    unsigned int startTime = millis();
+
+    ArmServo.write(ARM_MIDWAY);
+    while (millis() - startTime < 3000) {
+        lakePID();
+    }
+    ArmServo.write(ARM_DOWN);
+    delay(500);
 }
 
 bool isIntersection() {
@@ -284,6 +339,44 @@ bool isSensorSeeingBlack(int sensor) {
         return true;
     }
     return false;
+}
+
+void waitUntilSensorNotSeeingBlack(int sensor) {
+    const int BLACK_THRESHOLD = 250;
+
+    do {
+        qtra.readLine(sensorValues);
+        // Do nothing (Motors should be moving still)
+    } while (sensorValues[sensor] > BLACK_THRESHOLD);
+
+}
+
+void pidFollowForNIntersections(int Goal, char numIntersections) {
+    char lineCount = 0;
+    while (lineCount <= numIntersections) {
+        while (!isIntersection()) {
+            PID(Goal);
+        }
+        lineCount++;
+    }
+}
+
+void colorSensorTest() {
+
+    while(true) {
+        float red, green, blue;
+        fishSensor.getRGB(&red, &green, &blue);
+
+        Serial.print("R: ");
+        Serial.print(red, DEC);
+        Serial.print(" ");
+        Serial.print("G: ");
+        Serial.print(green, DEC);
+        Serial.print(" ");
+        Serial.print("B: ");
+        Serial.println(blue, DEC);
+        delay(100);
+    }
 }
 
 //bool intersection(int Goal, int numInt) {
